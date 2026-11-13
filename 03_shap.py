@@ -41,6 +41,7 @@ shap.initjs()
 # Force plot
 prediction = rf.predict(X_test[start_index:end_index])[0]
 print(f"The RF predicted: {prediction}")
+p
 shap.force_plot(explainer.expected_value[1],
                 shap_values[1],
                 X_test[start_index:end_index]) # for values
