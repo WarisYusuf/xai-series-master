@@ -3,6 +3,8 @@ from utils import DataLoader
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import f1_score, accuracy_score
 import shap
+import matplotlib.pyplot as plt
+import numpy as np
 
 # %% Load and preprocess data
 data_loader = DataLoader()
@@ -43,9 +45,10 @@ prediction = rf.predict(X_test[start_index:end_index])[0]
 print(f"The RF predicted: {prediction}")
 patient_index = 0
 stroke_index = 1
-shap.force_plot(explainer.expected_value[1],
+a = shap.force_plot(explainer.expected_value[1],
                 shap_values[patient_index, :, stroke_index],
                 X_test[start_index:end_index]) # for values
+shap.save_html("plot.html", a)
 
 # %% >> Visualize global features
 # Feature summary
