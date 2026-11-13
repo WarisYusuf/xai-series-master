@@ -41,12 +41,15 @@ shap.initjs()
 # Force plot
 prediction = rf.predict(X_test[start_index:end_index])[0]
 print(f"The RF predicted: {prediction}")
-p
+patient_index = 0
+stroke_index = 1
 shap.force_plot(explainer.expected_value[1],
-                shap_values[1],
+                shap_values[patient_index, :, stroke_index],
                 X_test[start_index:end_index]) # for values
 
 # %% >> Visualize global features
 # Feature summary
-shap.summary_plot(shap_values, X_test)
+#shap.summary_plot(shap_values, X_test)
 
+shap_values_all = explainer.shap_values(X_test)
+shap.summary_plot(shap_values_all[:, :, 1], X_test)
