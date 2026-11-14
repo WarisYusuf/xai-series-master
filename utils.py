@@ -41,7 +41,7 @@ class DataLoader():
         return train_test_split(X, y, test_size=0.20, random_state=2021)
     
     def oversample(self, X_train, y_train):
-        oversample = RandomOverSampler(sampling_strategy='minority')
+        oversample = RandomOverSampler(sampling_strategy='minority', random_state=2021)
         # Convert to numpy and oversample
         x_np = X_train.to_numpy()
         y_np = y_train.to_numpy()
