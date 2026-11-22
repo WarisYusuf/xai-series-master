@@ -9,17 +9,33 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import copy
 import pandas as pd 
+import random
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
 
 # Set GPU device
-print(torch.cuda.is_available())
-device = torch.device("cuda:0")
+#print(torch.cuda.is_available())
+#device = torch.device("cuda:0")
+# FOR macbook 
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+    print("Using MPS device")
+else:
+    device = torch.device("cpu")
+
 
 
 # %% Load data
 TRAIN_ROOT = "data/brain_mri/training"
 TEST_ROOT = "data/brain_mri/testing"
 train_dataset = torchvision.datasets.ImageFolder(root=TRAIN_ROOT)
-test_dataset = torchvision.datasets.ImageFolder(root=TRAIN_ROOT)
+test_dataset = torchvision.datasets.ImageFolder(root=TEST_ROOT) # failure train_root
+print("Training images:", len(train_dataset))
+print("Testing images:", len(test_dataset))
+print("Classes:", train_dataset.classes)
+print("Class mapping:", train_dataset.class_to_idx)
+print("Same classes:",train_dataset.class_to_idx == test_dataset.class_to_idx)
 
 
 # %% Building the model
@@ -69,7 +85,7 @@ train_loader = torch.utils.data.DataLoader(
 test_loader = torch.utils.data.DataLoader(
     test_dataset,
     batch_size=batch_size,
-    shuffle=True
+    shuffle=False
 )
 
 # %% Train
@@ -89,14 +105,20 @@ for epoch in range(epochs):
         loss = cross_entropy_loss(outputs, labels)
         loss.backward()
         optimizer.step()
-        print(loss)
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {loss.item():.4f}")
+
+torch.save(model.state_dict(), "vgg16_brain_mri.pth")
 
 # %% Inspect predictions for first batch
+
 import pandas as pd
 inputs, labels = next(iter(test_loader))
 inputs = inputs.to(device)
 labels = labels.numpy()
-outputs = model(inputs).max(1).indices.detach().cpu().numpy()
+model.eval()
+with torch.no_grad():
+    outputs = model(inputs).argmax(dim=1).cpu().numpy()
+
 comparison = pd.DataFrame()
 print("Batch accuracy: ", (labels==outputs).sum()/len(labels))
 comparison["labels"] = labels
@@ -105,6 +127,27 @@ comparison["outputs"] = outputs
 comparison
 
 # %% Layerwise relevance propagation for VGG16
+
+
+correct = 0
+total = 0
+
+with torch.no_grad():
+    for inputs_test, labels_test in test_loader:
+        inputs_test = inputs_test.to(device)
+        labels_test = labels_test.to(device)
+
+        outputs_test = model(inputs_test)
+        predictions = outputs_test.argmax(dim=1)
+
+        correct += (predictions == labels_test).sum().item()
+        total += labels_test.size(0)
+
+test_accuracy = correct / total
+
+print("Total test images:", total)
+print(f"Test accuracy: {test_accuracy:.4f}")
+print(f"Test accuracy (%): {test_accuracy * 100:.2f}%")
 # For other CNN architectures this code might become more complex
 # Source: https://git.tu-berlin.de/gmontavon/lrp-tutorial
 # http://iphome.hhi.de/samek/pdf/MonXAI19.pdf
@@ -168,12 +211,20 @@ def apply_lrp_on_vgg16(model, image):
         activations[layer+1] = activation
 
     # >>> Step 3: Replace last layer with one-hot-encoding
-    output_activation = activations[-1].detach().cpu().numpy()
+    
+    # >>> Step 3: Replace last layer with one-hot-encoding
+    output_activation = activations[-1].detach()
     max_activation = output_activation.max()
-    one_hot_output = [val if val == max_activation else 0 
-                        for val in output_activation[0]]
 
-    activations[-1] = torch.FloatTensor([one_hot_output]).to(device)
+    one_hot_output = torch.where(
+        output_activation == max_activation,
+        output_activation,
+        torch.zeros_like(output_activation)
+    )
+
+    activations[-1] = one_hot_output
+    #activations[-1] = torch.FloatTensor([one_hot_output]).to(device)
+
 
     # >>> Step 4: Backpropagate relevance scores
     relevances = [None] * n_layers + [activations[-1]]
@@ -215,7 +266,15 @@ def apply_lrp_on_vgg16(model, image):
 
 # %%
 # Calculate relevances for first image in this test batch
-image_id = 31
+correct_images = np.where(outputs == labels)[0]
+
+if len(correct_images) == 0:
+    raise ValueError("No correctly classified images found.")
+image_id = correct_images[0]
+print("Selected image:", image_id)
+print("True label:", labels[image_id])
+print("Predicted label:", outputs[image_id])
+#image_id = 31
 image_relevances = apply_lrp_on_vgg16(model, inputs[image_id])
 image_relevances = image_relevances.permute(0,2,3,1).detach().cpu().numpy()[0]
 image_relevances = np.interp(image_relevances, (image_relevances.min(),
@@ -234,6 +293,7 @@ if outputs[image_id] == labels[image_id]:
     plt.imshow(image_relevances[:,:,0], cmap="seismic")
     plt.subplot(1,2,2)
     plt.imshow(inputs[image_id].permute(1,2,0).detach().cpu().numpy())
+    plt.savefig("lrp_result.png", dpi=300, bbox_inches="tight")
     plt.show()
 else:
     print("This image is not classified correctly.")
